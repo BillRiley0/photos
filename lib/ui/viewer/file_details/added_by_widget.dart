@@ -1,0 +1,47 @@
+import "package:flutter/material.dart";
+import "package:photos/generated/l10n.dart";
+import "package:photos/models/file/extensions/file_props.dart";
+import 'package:photos/models/file/file.dart';
+import "package:photos/services/collections_service.dart";
+import "package:photos/services/contacts/contact_identity_resolver.dart";
+import "package:photos/theme/ente_theme.dart";
+
+class AddedByWidget extends StatelessWidget {
+  final EnteFile file;
+
+  const AddedByWidget(this.file, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!file.isUploaded) {
+      return const SizedBox.shrink();
+    }
+    late final String addedBy;
+    if (file.isOwner) {
+      final uploaderName = file.uploaderName?.trim();
+      if (uploaderName == null || uploaderName.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      addedBy = uploaderName;
+    } else {
+      if (file.ownerID == null) {
+        return const SizedBox.shrink();
+      }
+      final fileOwner = CollectionsService.instance.getFileOwner(
+        file.ownerID!,
+        file.collectionID,
+      );
+      addedBy = resolveDisplayName(fileOwner);
+    }
+    if (addedBy.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0, bottom: 4.0, left: 16),
+      child: Text(
+        AppLocalizations.of(context).addedBy(emailOrName: addedBy),
+        style: getEnteTextTheme(context).miniMuted,
+      ),
+    );
+  }
+}

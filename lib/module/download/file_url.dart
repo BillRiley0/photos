@@ -1,0 +1,42 @@
+import "package:photos/core/constants.dart";
+import "package:photos/service_locator.dart";
+
+enum FileUrlType {
+  download,
+  publicDownload,
+  thumbnail,
+  publicThumbnail,
+  directDownload,
+}
+
+class FileUrl {
+  static String getUrl(int fileID, FileUrlType type) {
+    final endpoint = endpointConfig.endpoint;
+    final disableWorker =
+        endpoint != kDefaultProductionEndpoint || flagService.disableCFWorker;
+
+    switch (type) {
+      case FileUrlType.directDownload:
+        return "$endpoint/files/download/$fileID";
+      case FileUrlType.download:
+        return disableWorker
+            ? "$endpoint/files/download/$fileID"
+            : "https://files.ente.com/?fileID=$fileID";
+
+      case FileUrlType.publicDownload:
+        return disableWorker
+            ? "$endpoint/public-collection/files/download/$fileID"
+            : "https://public-albums.ente.com/download/?fileID=$fileID";
+
+      case FileUrlType.thumbnail:
+        return disableWorker
+            ? "$endpoint/files/preview/$fileID"
+            : "https://thumbnails.ente.com/?fileID=$fileID";
+
+      case FileUrlType.publicThumbnail:
+        return disableWorker
+            ? "$endpoint/public-collection/files/preview/$fileID"
+            : "https://public-albums.ente.com/preview/?fileID=$fileID";
+    }
+  }
+}

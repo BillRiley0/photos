@@ -1,0 +1,282 @@
+import "package:fade_indexed_stack/fade_indexed_stack.dart";
+import "package:flutter/foundation.dart";
+import "package:flutter/material.dart";
+import "package:flutter_animate/flutter_animate.dart";
+import "package:logging/logging.dart";
+import "package:photos/generated/intl/app_localizations.dart";
+import "package:photos/models/search/generic_search_result.dart";
+import "package:photos/models/search/index_of_indexed_stack.dart";
+import "package:photos/models/search/search_types.dart";
+import "package:photos/service_locator.dart";
+import "package:photos/services/wrapped/wrapped_service.dart";
+import "package:photos/states/all_sections_examples_state.dart";
+import "package:photos/theme/ente_theme.dart";
+import "package:photos/ui/common/loading_widget.dart";
+import "package:photos/ui/components/banners/ml_progress_banner.dart";
+import "package:photos/ui/rituals/rituals_banner.dart";
+import "package:photos/ui/viewer/search/result/no_result_widget.dart";
+import "package:photos/ui/viewer/search/search_suggestions.dart";
+import "package:photos/ui/viewer/search/search_widget.dart";
+import "package:photos/ui/viewer/search/tab_empty_state.dart";
+import "package:photos/ui/viewer/search_tab/contacts_section.dart";
+import "package:photos/ui/viewer/search_tab/file_type_section.dart";
+import "package:photos/ui/viewer/search_tab/locations_section.dart";
+import "package:photos/ui/viewer/search_tab/magic_section.dart";
+import "package:photos/ui/viewer/search_tab/people_section.dart";
+import "package:photos/ui/wrapped/wrapped_discovery_section.dart";
+
+class SearchTab extends StatefulWidget {
+  const SearchTab({super.key, this.shouldConsumeBackNotifier});
+
+  final ValueNotifier<bool>? shouldConsumeBackNotifier;
+
+  @override
+  State<SearchTab> createState() => _SearchTabState();
+}
+
+class _SearchTabState extends State<SearchTab> {
+  late int index;
+  final indexOfStackNotifier = IndexOfStackNotifier();
+
+  @override
+  void initState() {
+    super.initState();
+    index = indexOfStackNotifier.index;
+    indexOfStackNotifier.addListener(indexNotifierListener);
+  }
+
+  void indexNotifierListener() {
+    setState(() {
+      index = indexOfStackNotifier.index;
+    });
+  }
+
+  @override
+  void dispose() {
+    indexOfStackNotifier.removeListener(indexNotifierListener);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = getEnteColorScheme(context);
+    final resultsBackground = EnteTheme.isDark(context)
+        ? colorScheme.backgroundColour
+        : colorScheme.backgroundElevated2;
+    final headerColor = index == 1
+        ? resultsBackground
+        : colorScheme.backgroundColour;
+    return Column(
+      children: [
+        ColoredBox(
+          color: headerColor,
+          child: SafeArea(
+            bottom: false,
+            child: SearchWidget(
+              shouldConsumeBackNotifier: widget.shouldConsumeBackNotifier,
+            ),
+          ),
+        ),
+        Expanded(
+          child: AllSectionsExamplesProvider(
+            child: FadeIndexedStack(
+              lazy: false,
+              duration: const Duration(milliseconds: 150),
+              index: index,
+              children: const [
+                AllSearchSections(),
+                SearchSuggestionsWidget(),
+                NoResultWidget(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AllSearchSections extends StatefulWidget {
+  const AllSearchSections({super.key});
+
+  @override
+  State<AllSearchSections> createState() => _AllSearchSectionsState();
+}
+
+class _AllSearchSectionsState extends State<AllSearchSections> {
+  final Logger _logger = Logger('_AllSearchSectionsState');
+
+  @override
+  Widget build(BuildContext context) {
+    final searchTypes = SectionType.values.toList(growable: true);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final bottomPadding = keyboardInset > 130.0 ? keyboardInset + 50.0 : 180.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Stack(
+        children: [
+          FutureBuilder<AllSectionsExamplesData>(
+            future: InheritedAllSectionsExamples.of(
+              context,
+            ).allSectionsExamplesFuture,
+            builder: (context, snapshot) {
+              if (snapshot.hasData &&
+                  snapshot.data!.sectionResults.isNotEmpty) {
+                final sectionResultsByType = snapshot.data!.sectionResults;
+                final hasAnySearchableFiles =
+                    snapshot.data!.hasAnySearchableFiles;
+                final shouldRenderContacts = !isLocalGalleryMode;
+                if (!hasAnySearchableFiles &&
+                    sectionResultsByType.every((element) => element.isEmpty) &&
+                    !shouldRenderContacts) {
+                  return const Padding(
+                    padding: EdgeInsets.only(bottom: 72),
+                    child: SearchTabEmptyState(),
+                  );
+                }
+                if (sectionResultsByType.length != searchTypes.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 72),
+                    child: Text(
+                      AppLocalizations.of(context).searchSectionsLengthMismatch(
+                        snapshotLength: sectionResultsByType.length,
+                        searchLength: searchTypes.length,
+                      ),
+                    ),
+                  );
+                }
+                final faceSectionIndex = searchTypes.indexOf(SectionType.face);
+                final hasSurfacedOfflineFaces =
+                    isLocalGalleryMode &&
+                    faceSectionIndex >= 0 &&
+                    faceSectionIndex < sectionResultsByType.length &&
+                    sectionResultsByType.elementAt(faceSectionIndex).isNotEmpty;
+                return ListView.builder(
+                      padding: EdgeInsets.only(bottom: bottomPadding),
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: searchTypes.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          if (!isLocalGalleryMode) {
+                            return const SizedBox.shrink();
+                          }
+                          if (hasSurfacedOfflineFaces) {
+                            return const SizedBox.shrink();
+                          }
+                          return const MLProgressBanner();
+                        }
+                        final sectionIndex = index - 1;
+                        final sectionType = searchTypes[sectionIndex];
+                        switch (sectionType) {
+                          case SectionType.face:
+                            if (!hasGrantedMLConsent) {
+                              return const SizedBox.shrink();
+                            }
+                            return PeopleSection(
+                              examples:
+                                  sectionResultsByType.elementAt(sectionIndex)
+                                      as List<GenericSearchResult>,
+                            );
+                          case SectionType.album:
+                            return const SizedBox.shrink();
+                          case SectionType.ritual:
+                            if (isLocalGalleryMode) {
+                              return const SizedBox.shrink();
+                            }
+                            return const _RitualsDiscoverySection();
+                          case SectionType.wrapped:
+                            return ValueListenableBuilder<WrappedEntryState>(
+                              valueListenable: wrappedService.stateListenable,
+                              builder:
+                                  (
+                                    BuildContext context,
+                                    WrappedEntryState state,
+                                    Widget? child,
+                                  ) {
+                                    if (!wrappedService
+                                        .shouldShowDiscoveryEntry) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return WrappedDiscoverySection(
+                                      state: state,
+                                    );
+                                  },
+                            );
+                          case SectionType.location:
+                            return LocationsSection(
+                              sectionResultsByType.elementAt(sectionIndex)
+                                  as List<GenericSearchResult>,
+                            );
+                          case SectionType.contacts:
+                            return const ContactsSectionLoader();
+                          case SectionType.fileTypesAndExtension:
+                            return FileTypeSection(
+                              hasAnySearchableFiles: hasAnySearchableFiles,
+                            );
+                          case SectionType.magic:
+                            return MagicSection(
+                              sectionResultsByType.elementAt(sectionIndex)
+                                  as List<GenericSearchResult>,
+                            );
+                        }
+                      },
+                    )
+                    .animate(delay: const Duration(milliseconds: 150))
+                    .slide(
+                      begin: const Offset(0, -0.015),
+                      end: const Offset(0, 0),
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    )
+                    .fadeIn(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                    );
+              } else if (snapshot.hasError) {
+                _logger.severe(
+                  'Failed to load sections: ',
+                  snapshot.error,
+                  snapshot.stackTrace,
+                );
+                if (kDebugMode) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 72),
+                    child: Text(
+                      AppLocalizations.of(context).error +
+                          ': ${snapshot.error}',
+                    ),
+                  );
+                }
+                return const Padding(
+                  padding: EdgeInsets.only(bottom: 72),
+                  child: EnteLoadingWidget(),
+                );
+              } else {
+                return const Padding(
+                  padding: EdgeInsets.only(bottom: 72),
+                  child: EnteLoadingWidget(),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RitualsDiscoverySection extends StatelessWidget {
+  const _RitualsDiscoverySection();
+
+  @override
+  Widget build(BuildContext context) {
+    if (!flagService.ritualsFlag) {
+      return const SizedBox.shrink();
+    }
+    return const Padding(
+      padding: EdgeInsets.only(top: 8, bottom: 24),
+      child: RitualsBanner(),
+    );
+  }
+}
