@@ -83,18 +83,17 @@ jobs:
           echo "NDK_HOME=$ANDROID_NDK_HOME"
           ls -la $ANDROID_NDK_HOME
 
-      - name: Get Flutter dependencies (monorepo root)
-        working-directory: ente-monorepo
+      - name: Install melos
         run: |
-          flutter pub get
+          dart pub global activate melos
+
+      - name: Bootstrap monorepo with melos
+        working-directory: ente-monorepo/mobile
+        run: |
+          melos bootstrap
 
       - name: Get Flutter dependencies (photos app)
         working-directory: ente-monorepo/mobile/apps/photos
-        run: |
-          flutter pub get
-
-      - name: Get Flutter dependencies (packages)
-        working-directory: ente-monorepo/mobile/packages
         run: |
           flutter pub get
 
