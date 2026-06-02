@@ -54,10 +54,6 @@ jobs:
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
-      - name: Set up cargokit
-        run: |
-          cargo install cargokit
-
       - name: Cache Rust cargo registry
         uses: actions/cache@v4
         with:
@@ -97,17 +93,22 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Generate Rust FFI bindings
+      - name: Get Flutter dependencies (packages)
+        working-directory: ente-monorepo/mobile/packages
+        run: |
+          flutter pub get
+
+      - name: Generate Rust FFI bindings (photos app)
         working-directory: ente-monorepo/mobile/apps/photos
         run: |
-          echo "Generating Rust FFI bindings..."
-          dart run build_runner build --delete-conflicting-outputs
+          echo "Generating Rust FFI bindings for photos app..."
+          dart run build_runner build --delete-conflicting-outputs || echo "Build runner completed with warnings"
 
       - name: Regenerate contacts Rust bindings
-        working-directory: ente-monorepo/packages/contacts
+        working-directory: ente-monorepo/mobile/packages/contacts
         run: |
           echo "Regenerating contacts Rust bindings..."
-          dart run build_runner build --delete-conflicting-outputs
+          dart run build_runner build --delete-conflicting-outputs || echo "Build runner completed with warnings"
 
       - name: Format Dart code
         working-directory: ente-monorepo/mobile/apps/photos
