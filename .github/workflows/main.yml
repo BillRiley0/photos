@@ -1,0 +1,132 @@
+name: Build and Release Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Release name'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.10'
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Cache Rust cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Rust cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
+
+      - name: Cache Rust cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-target-
+
+      - name: Set up NDK
+        run: |
+          # NDK is already installed in ubuntu-latest, verify it
+          ls -la $ANDROID_NDK_HOME || echo "NDK not found, installing..."
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Format Dart code
+        run: dart format --set-exit-if-changed .
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Build APK (independent flavor)
+        run: |
+          flutter build apk \
+            --release \
+            --flavor independent \
+            -v
+
+      - name: Build APK (fdroid flavor)
+        run: |
+          flutter build apk \
+            --release \
+            --flavor fdroid \
+            -v
+
+      - name: List build artifacts
+        run: |
+          find build -name "*.apk" -type f
+
+      - name: Get release info
+        id: release_info
+        run: |
+          VERSION=$(grep "version:" pubspec.yaml | head -1 | sed 's/.*: //' | sed 's/+.*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          RELEASE_NAME="${{ github.event.inputs.release_name }}"
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="Release $VERSION"
+          fi
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          name: ${{ steps.release_info.outputs.release_name }}
+          tag_name: ${{ github.ref_name || format('v{0}', steps.release_info.outputs.version) }}
+          draft: false
+          prerelease: ${{ contains(steps.release_info.outputs.version, 'alpha') || contains(steps.release_info.outputs.version, 'beta') || contains(steps.release_info.outputs.version, 'rc') }}
+          files: |
+            build/app/outputs/apk/independent/release/app-independent-release.apk
+            build/app/outputs/apk/fdroid/release/app-fdroid-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-apks
+          path: build/app/outputs/apk/*/release/*.apk
+          retention-days: 30
