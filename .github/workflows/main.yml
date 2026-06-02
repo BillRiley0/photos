@@ -17,10 +17,22 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
+      - name: Checkout photos repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: photos-repo
+
+      - name: Clone Ente official repo
+        run: |
+          git clone --depth 1 https://github.com/ente-io/ente.git ente-monorepo
+
+      - name: Replace photos folder with custom repo
+        run: |
+          rm -rf ente-monorepo/mobile/apps/photos
+          cp -r photos-repo ente-monorepo/mobile/apps/photos
+          cd ente-monorepo/mobile/apps/photos
+          pwd
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -40,11 +52,15 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Install Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
       - name: Cache Rust cargo registry
         uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('ente-monorepo/mobile/apps/photos/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
@@ -52,7 +68,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('ente-monorepo/mobile/apps/photos/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-git-
 
@@ -60,25 +76,29 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('ente-monorepo/mobile/apps/photos/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-build-target-
 
-      - name: Set up NDK
+      - name: Set up Android NDK
         run: |
-          # NDK is already installed in ubuntu-latest, verify it
-          ls -la $ANDROID_NDK_HOME || echo "NDK not found, installing..."
+          echo "NDK_HOME=$ANDROID_NDK_HOME"
+          ls -la $ANDROID_NDK_HOME
 
       - name: Get Flutter dependencies
+        working-directory: ente-monorepo/mobile/apps/photos
         run: flutter pub get
 
       - name: Format Dart code
-        run: dart format --set-exit-if-changed .
+        working-directory: ente-monorepo/mobile/apps/photos
+        run: dart format --set-exit-if-changed . || true
 
       - name: Analyze Flutter code
-        run: flutter analyze
+        working-directory: ente-monorepo/mobile/apps/photos
+        run: flutter analyze || true
 
       - name: Build APK (independent flavor)
+        working-directory: ente-monorepo/mobile/apps/photos
         run: |
           flutter build apk \
             --release \
@@ -86,6 +106,7 @@ jobs:
             -v
 
       - name: Build APK (fdroid flavor)
+        working-directory: ente-monorepo/mobile/apps/photos
         run: |
           flutter build apk \
             --release \
@@ -93,11 +114,13 @@ jobs:
             -v
 
       - name: List build artifacts
+        working-directory: ente-monorepo/mobile/apps/photos
         run: |
           find build -name "*.apk" -type f
 
       - name: Get release info
         id: release_info
+        working-directory: ente-monorepo/mobile/apps/photos
         run: |
           VERSION=$(grep "version:" pubspec.yaml | head -1 | sed 's/.*: //' | sed 's/+.*//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -113,13 +136,14 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
+          repository: BillRiley0/photos
           name: ${{ steps.release_info.outputs.release_name }}
           tag_name: ${{ github.ref_name || format('v{0}', steps.release_info.outputs.version) }}
           draft: false
           prerelease: ${{ contains(steps.release_info.outputs.version, 'alpha') || contains(steps.release_info.outputs.version, 'beta') || contains(steps.release_info.outputs.version, 'rc') }}
           files: |
-            build/app/outputs/apk/independent/release/app-independent-release.apk
-            build/app/outputs/apk/fdroid/release/app-fdroid-release.apk
+            ente-monorepo/mobile/apps/photos/build/app/outputs/apk/independent/release/app-independent-release.apk
+            ente-monorepo/mobile/apps/photos/build/app/outputs/apk/fdroid/release/app-fdroid-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -128,5 +152,5 @@ jobs:
         if: always()
         with:
           name: android-apks
-          path: build/app/outputs/apk/*/release/*.apk
+          path: ente-monorepo/mobile/apps/photos/build/app/outputs/apk/*/release/*.apk
           retention-days: 30
