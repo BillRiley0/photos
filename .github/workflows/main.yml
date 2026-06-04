@@ -92,30 +92,20 @@ jobs:
         run: |
           melos bootstrap
 
-      - name: Get Flutter dependencies (photos app)
-        working-directory: ente-monorepo/mobile/apps/photos
+      - name: Generate Rust FFI bindings
+        working-directory: ente-monorepo/mobile
         run: |
-          flutter pub get
-
-      - name: Generate Rust FFI bindings (photos app)
-        working-directory: ente-monorepo/mobile/apps/photos
-        run: |
-          echo "Generating Rust FFI bindings for photos app..."
-          dart run build_runner build --delete-conflicting-outputs || echo "Build runner completed with warnings"
-
-      - name: Regenerate contacts Rust bindings
-        working-directory: ente-monorepo/mobile/packages/contacts
-        run: |
-          echo "Regenerating contacts Rust bindings..."
-          dart run build_runner build --delete-conflicting-outputs || echo "Build runner completed with warnings"
+          melos run codegen:rust
 
       - name: Format Dart code
         working-directory: ente-monorepo/mobile/apps/photos
-        run: dart format --set-exit-if-changed . || true
+        run: |
+          dart format . --set-exit-if-changed || true
 
       - name: Analyze Flutter code
         working-directory: ente-monorepo/mobile/apps/photos
-        run: flutter analyze || true
+        run: |
+          flutter analyze . || true
 
       - name: Build APK (independent flavor)
         working-directory: ente-monorepo/mobile/apps/photos
