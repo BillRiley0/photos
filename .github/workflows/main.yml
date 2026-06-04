@@ -107,6 +107,11 @@ jobs:
         run: |
           flutter analyze . || true
 
+      - name: Clear Gradle cache
+        run: |
+          rm -rf ~/.gradle/caches/transforms-* || true
+          rm -rf ~/.gradle/caches/aapt2-* || true
+
       - name: Build APK (independent flavor)
         working-directory: ente-monorepo/mobile/apps/photos
         run: |
@@ -114,6 +119,8 @@ jobs:
             --release \
             --flavor independent \
             -v
+        env:
+          GRADLE_OPTS: "-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError"
 
       - name: Build APK (fdroid flavor)
         working-directory: ente-monorepo/mobile/apps/photos
@@ -122,6 +129,8 @@ jobs:
             --release \
             --flavor fdroid \
             -v
+        env:
+          GRADLE_OPTS: "-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError"
 
       - name: List build artifacts
         working-directory: ente-monorepo/mobile/apps/photos
