@@ -162,7 +162,9 @@ class FavoritesService {
     }
     _updateFavoriteFilesCache(files, favFlag: true);
     Bus.instance.fire(LocalPhotosUpdatedEvent(files, source: "favoriteAdd"));
-    !isLocalGalleryMode && RemoteSyncService.instance.sync(silently: true).ignore();
+    if (!isLocalGalleryMode) {
+      RemoteSyncService.instance.sync(silently: true);
+    }
   }
 
   Future<void> updateFavorites(
@@ -195,7 +197,9 @@ class FavoritesService {
         source: favFlag ? "favoriteAdd" : "favoriteRemove",
       ),
     );
-    !isLocalGalleryMode && RemoteSyncService.instance.sync(silently: true).ignore();
+    if (!isLocalGalleryMode) {
+      RemoteSyncService.instance.sync(silently: true);
+    }
   }
 
   Future<void> removeFromFavorites(BuildContext context, EnteFile file) async {
@@ -228,7 +232,9 @@ class FavoritesService {
     Bus.instance.fire(
       LocalPhotosUpdatedEvent([originalFile], source: "favoriteRemove"),
     );
-    !isLocalGalleryMode && RemoteSyncService.instance.sync(silently: true).ignore();
+    if (!isLocalGalleryMode) {
+      RemoteSyncService.instance.sync(silently: true);
+    }
   }
 
   Future<EnteFile?> _resolveFavoritesEntryForRemoval(
